@@ -61,9 +61,6 @@ COPY --chown=flink:flink --from=build /app/flink-kubernetes-standalone/target/$K
 COPY --chown=flink:flink --from=build /app/flink-autoscaler-plugin-jdbc/target/$AUTOSCALER_PLUGIN_JDBC_JAR .
 COPY --chown=flink:flink --from=build /app/flink-autoscaler-plugin-jdbc/target/dependency/* $OPERATOR_LIB
 COPY --chown=flink:flink --from=build /app/flink-kubernetes-operator/target/plugins $FLINK_HOME/plugins
-#RUN mkdir -p $FLINK_HOME/plugins/flink-kubernetes-operator-plugins
-#COPY --chown=flink:flink --from=build /app/flink-kubernetes-operator-plugins/target/flink-kubernetes-operator-plugins-*.jar $FLINK_HOME/plugins/flink-kubernetes-operator-plugins
-#COPY --chown=flink:flink --from=build /app/flink-kubernetes-operator-plugins/target/dependency/* $OPERATOR_LIB
 COPY --chown=flink:flink --from=build /app/tools/license/licenses-output/NOTICE .
 COPY --chown=flink:flink --from=build /app/tools/license/licenses-output/licenses ./licenses
 COPY --chown=flink:flink --from=build /app/LICENSE ./LICENSE
