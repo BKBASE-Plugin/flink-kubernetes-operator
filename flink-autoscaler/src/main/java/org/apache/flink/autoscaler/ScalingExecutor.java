@@ -539,7 +539,11 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
         double currentCpuPerSlot =
                 context.getConfiguration().get(KubernetesConfigOptions.TASK_MANAGER_CPU)
                         / currentTmSlots;
-        var tmSlots = calculateTaskmanagerSlots(parallelismOverrides);
+        var fixedTmSlots = context.getConfiguration().get(AutoScalerOptions.FIXED_TM_SLOTS);
+        var tmSlots =
+                fixedTmSlots
+                        ? context.getConfiguration().get(TaskManagerOptions.NUM_TASK_SLOTS)
+                        : calculateTaskmanagerSlots(parallelismOverrides);
         double cpuPerSlot = adjustTaskmanagerCpuRequestPerSlot(currentCpuPerSlot, context);
         double cpuOverride = cpuPerSlot * tmSlots;
         cpuOverride = Double.parseDouble(String.format("%.2f", cpuOverride));

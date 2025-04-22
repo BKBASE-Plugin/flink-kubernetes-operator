@@ -49,6 +49,7 @@ import org.slf4j.LoggerFactory;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Map;
 
 import static org.apache.flink.autoscaler.metrics.ScalingMetric.HEAP_MEMORY_USED;
@@ -412,7 +413,10 @@ public class MemoryTuning {
                                         .getAverage());
         int numTaskSlotsPerTM = config.get(TaskManagerOptions.NUM_TASK_SLOTS);
         int newNumTaskSlotsPerTM =
-                calculateSlotsPerTm(evaluatedMetrics.getVertexMetrics(), scalingSummaries);
+                calculateTaskmanagerSlots(
+                        config,
+                        ResourceCheckUtils.computeNewParallelisms(
+                                scalingSummaries, evaluatedMetrics.getVertexMetrics()));
         double overheadFactor = 1 + config.get(AutoScalerOptions.MEMORY_TUNING_OVERHEAD);
         long targetSizeBytes = (long) (memoryUsed.getBytes() * overheadFactor);
         // 每个slot至少分配128MB
@@ -427,21 +431,12 @@ public class MemoryTuning {
         return new MemorySize(targetSizeBytes);
     }
 
-    private static int calculateSlotsPerTm(
-            Map<JobVertexID, Map<ScalingMetric, EvaluatedScalingMetric>> evaluatedMetrics,
-            Map<JobVertexID, ScalingSummary> summaries) {
-        int maxParallelism = 1;
-
-        for (Map.Entry<JobVertexID, Map<ScalingMetric, EvaluatedScalingMetric>> entry :
-                evaluatedMetrics.entrySet()) {
-            JobVertexID id = entry.getKey();
-            Map<ScalingMetric, EvaluatedScalingMetric> metrics = entry.getValue();
-            var parallelism = (int) metrics.get(ScalingMetric.PARALLELISM).getCurrent();
-            if (summaries.containsKey(id)) {
-                parallelism = summaries.get(id).getNewParallelism();
-            }
-            maxParallelism = Math.max(maxParallelism, parallelism);
+    private static int calculateTaskmanagerSlots(
+            Configuration config, Map<JobVertexID, Integer> updatedParallelisms) {
+        if (config.get(AutoScalerOptions.FIXED_TM_SLOTS)) {
+            return config.get(TaskManagerOptions.NUM_TASK_SLOTS);
         }
+        int maxParallelism = Collections.max(updatedParallelisms.values());
         var tmMaxSlots = 10;
         var tmNumber = Math.ceil((double) maxParallelism / tmMaxSlots);
         return (int) Math.ceil((double) maxParallelism / tmNumber);
@@ -536,7 +531,9 @@ public class MemoryTuning {
         // Each task slot will potentially host all runtime subtasks if slot sharing enabled.
         // If slot sharing is disabled, this will use more memory than necessary, we better
         // overprovision slightly than failing with "Insufficient Network buffers".
-        maxNetworkMemory *= config.get(TaskManagerOptions.NUM_TASK_SLOTS);
+        int newNumTaskSlotsPerTM = calculateTaskmanagerSlots(config, updatedParallelisms);
+
+        maxNetworkMemory *= newNumTaskSlotsPerTM;
 
         return new MemorySize(memBudget.budget(maxNetworkMemory));
     }
