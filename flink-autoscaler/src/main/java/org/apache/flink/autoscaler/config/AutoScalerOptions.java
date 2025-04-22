@@ -404,6 +404,13 @@ public class AutoScalerOptions {
                     .withFallbackKeys(oldOperatorConfigKey("budget.taskmanager.cpu"))
                     .withDescription("Taskmanager budget of the cpu amount while scaling.");
 
+    public static final ConfigOption<Boolean> FIXED_TM_SLOTS =
+            autoScalerConfig("fixed_tm_slots")
+                    .booleanType()
+                    .defaultValue(false)
+                    .withFallbackKeys(oldOperatorConfigKey("fixed_tm_slots"))
+                    .withDescription("Whether taskmanager slots number is fixed.");
+
     public static final ConfigOption<String> EXTERNAL_CPU_METRICS_QUERY_URL =
             autoScalerConfig("external-cpu-metrics.query-url")
                     .stringType()
