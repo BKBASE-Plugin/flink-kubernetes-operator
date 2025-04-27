@@ -30,10 +30,7 @@ import org.apache.flink.configuration.RestOptions;
 import org.apache.flink.configuration.SecurityOptions;
 import org.apache.flink.core.execution.RestoreMode;
 import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
-import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
-import org.apache.flink.kubernetes.kubeclient.FlinkKubeClientFactory;
 import org.apache.flink.kubernetes.kubeclient.decorators.ExternalServiceDecorator;
-import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPod;
 import org.apache.flink.kubernetes.operator.api.FlinkDeployment;
 import org.apache.flink.kubernetes.operator.api.FlinkSessionJob;
 import org.apache.flink.kubernetes.operator.api.spec.FlinkSessionJobSpec;
@@ -58,7 +55,6 @@ import org.apache.flink.kubernetes.operator.utils.EventRecorder;
 import org.apache.flink.kubernetes.operator.utils.ExceptionUtils;
 import org.apache.flink.kubernetes.operator.utils.FlinkUtils;
 import org.apache.flink.kubernetes.operator.utils.JobManagerIpCache;
-import org.apache.flink.kubernetes.utils.KubernetesUtils;
 import org.apache.flink.runtime.client.JobStatusMessage;
 import org.apache.flink.runtime.highavailability.nonha.standalone.StandaloneClientHAServices;
 import org.apache.flink.runtime.jobmaster.JobResult;
@@ -119,7 +115,6 @@ import io.fabric8.kubernetes.client.dsl.Resource;
 import io.fabric8.kubernetes.client.dsl.Waitable;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.ObjectUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -871,30 +866,7 @@ public abstract class AbstractFlinkService implements FlinkService {
     private String getJobManagerPodIp(Configuration conf) {
         final String clusterId = conf.get(KubernetesConfigOptions.CLUSTER_ID);
         final String namespace = conf.get(KubernetesConfigOptions.NAMESPACE);
-        String jmPodIp = JobManagerIpCache.get(clusterId, namespace);
-        if (jmPodIp != null) {
-            return jmPodIp;
-        }
-        try (FlinkKubeClient client =
-                FlinkKubeClientFactory.getInstance().fromConfiguration(conf, "client")) {
-            for (int retryAttempt = 0; retryAttempt < 3; retryAttempt++) {
-                List<KubernetesPod> podList =
-                        client.getPodsWithLabels(KubernetesUtils.getJobManagerSelectors(clusterId));
-                if (!podList.isEmpty()) {
-                    String podIp = podList.get(0).getInternalResource().getStatus().getPodIP();
-                    if (StringUtils.isNotBlank(podIp)) {
-                        JobManagerIpCache.set(clusterId, podIp);
-                        return podIp;
-                    }
-                }
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                }
-            }
-        }
-        return null;
+        return JobManagerIpCache.get(clusterId, namespace);
     }
 
     @VisibleForTesting

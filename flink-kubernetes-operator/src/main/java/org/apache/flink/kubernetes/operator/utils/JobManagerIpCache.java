@@ -18,10 +18,9 @@
 
 package org.apache.flink.kubernetes.operator.utils;
 
-import org.apache.flink.kubernetes.utils.KubernetesUtils;
-
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+import io.fabric8.kubernetes.api.model.ListOptions;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.Watcher;
@@ -30,7 +29,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -42,22 +40,17 @@ public final class JobManagerIpCache {
     private static final Cache<String, String> cache =
             CacheBuilder.newBuilder()
                     .recordStats()
-                    .expireAfterWrite(1, TimeUnit.DAYS)
-                    .maximumSize(20000)
+                    .expireAfterAccess(1, TimeUnit.DAYS)
+                    .maximumSize(50000)
                     .build();
-
-    private static KubernetesClient client;
 
     public static String get(String clusterId, String namespace) {
         String jmIp = cache.getIfPresent(clusterId);
         if (jmIp == null) {
             LOG.warn(
-                    "Could not get jobmanager ip from cache, try to get it with kubernetes client");
-            jmIp = getFlinkJobManagerPodIp(clusterId, namespace);
-            LOG.info("Got jobmanager ip with kubernetes client: {}", jmIp);
-            if (jmIp != null) {
-                cache.put(clusterId, jmIp);
-            }
+                    "Could not get jobmanager ip from cache for cluster {} in namespace {}",
+                    clusterId,
+                    namespace);
         }
         return jmIp;
     }
@@ -66,78 +59,49 @@ public final class JobManagerIpCache {
         cache.put(clusterId, jmIp);
     }
 
-    public static void refresh(String clusterId, String namespace) {
-        String jmIp = getFlinkJobManagerPodIp(clusterId, namespace);
-        cache.put(clusterId, jmIp);
-    }
-
-    public static Map<String, String> listFlinkJobManagerPodIps(Set<String> namespaces) {
-        Map<String, String> jmIps = new HashMap<>();
-        Map<String, String> labels = new HashMap<>();
-        labels.put("type", "flink-native-kubernetes");
-        labels.put("component", "jobmanager");
-        labels.put("deployMode", "flink-k8s-operator");
-        for (String ns : namespaces) {
-            List<Pod> pods = listFlinkJobManagerPod(ns, labels);
-            pods.forEach(
-                    p ->
-                            jmIps.put(
-                                    p.getMetadata().getLabels().get("app"),
-                                    p.getStatus().getPodIP()));
-        }
-        return jmIps;
-    }
-
-    public static String getFlinkJobManagerPodIp(String clusterId, String namespace) {
-        var labels = KubernetesUtils.getJobManagerSelectors(clusterId);
-        List<Pod> pods = listFlinkJobManagerPod(namespace, labels);
-        return pods.isEmpty() ? null : pods.get(0).getStatus().getPodIP();
-    }
-
-    private static List<Pod> listFlinkJobManagerPod(String namespace, Map<String, String> labels) {
-        return client.pods()
-                .inNamespace(namespace)
-                .withNewFilter()
-                .withLabels(labels)
-                .endFilter()
-                .list()
-                .getItems();
-    }
-
     public static void watchFlinkJobManagerPod(
             KubernetesClient kubernetesClient, Set<String> namespaces) {
         Map<String, String> labels = new HashMap<>();
-        client = kubernetesClient;
         labels.put("type", "flink-native-kubernetes");
         labels.put("component", "jobmanager");
         labels.put("deployMode", "flink-k8s-operator");
         for (String namespace : namespaces) {
             LOG.info("List and watch jobmanager pod of namespace '{}'", namespace);
+            ListOptions listOptions = new ListOptions();
+            listOptions.setResourceVersion("0");
+
             kubernetesClient
                     .pods()
                     .inNamespace(namespace)
                     .withNewFilter()
                     .withLabels(labels)
                     .endFilter()
+                    .withResourceVersion("0")
                     .watch(
+                            listOptions,
                             new Watcher<Pod>() {
                                 @Override
                                 public void eventReceived(Action action, Pod pod) {
+                                    String clusterId = pod.getMetadata().getLabels().get("app");
                                     switch (action) {
                                         case ADDED:
                                         case MODIFIED:
-                                            String clusterId =
-                                                    pod.getMetadata().getLabels().get("app");
                                             String jmIp = pod.getStatus().getPodIP();
                                             if (jmIp != null) {
                                                 LOG.info(
-                                                        "update jobmanager ip cache: action: {}, pod: {}, ip: {}",
+                                                        "Update jobmanager ip cache: action: {}, pod: {}, ip: {}",
                                                         action,
                                                         clusterId,
                                                         jmIp);
                                                 set(clusterId, jmIp);
                                             }
                                             break;
+                                        case DELETED:
+                                            LOG.info(
+                                                    "Remove jobmanager ip cache: action: {}, pod: {}",
+                                                    action,
+                                                    clusterId);
+                                            cache.invalidate(clusterId);
                                         default:
                                             break;
                                     }
