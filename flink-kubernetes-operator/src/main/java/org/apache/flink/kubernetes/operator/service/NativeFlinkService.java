@@ -41,6 +41,7 @@ import org.apache.flink.kubernetes.operator.config.KubernetesOperatorConfigOptio
 import org.apache.flink.kubernetes.operator.controller.FlinkResourceContext;
 import org.apache.flink.kubernetes.operator.reconciler.ReconciliationUtils;
 import org.apache.flink.kubernetes.operator.utils.EventRecorder;
+import org.apache.flink.kubernetes.operator.utils.JobManagerInfoCache;
 import org.apache.flink.kubernetes.utils.KubernetesUtils;
 import org.apache.flink.runtime.jobgraph.JobResourceRequirements;
 import org.apache.flink.runtime.jobgraph.JobVertexID;
@@ -52,6 +53,7 @@ import org.apache.flink.runtime.rest.messages.job.JobResourceRequirementsHeaders
 import org.apache.flink.runtime.rest.messages.job.JobResourcesRequirementsUpdateHeaders;
 
 import io.fabric8.kubernetes.api.model.DeletionPropagation;
+import io.fabric8.kubernetes.api.model.ListOptions;
 import io.fabric8.kubernetes.api.model.PodList;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.apps.DeploymentBuilder;
@@ -124,11 +126,13 @@ public class NativeFlinkService extends AbstractFlinkService {
 
     @Override
     protected PodList getJmPodList(String namespace, String clusterId) {
+        ListOptions listOptions = new ListOptions();
+        listOptions.setResourceVersion("0");
         return kubernetesClient
                 .pods()
                 .inNamespace(namespace)
                 .withLabels(KubernetesUtils.getJobManagerSelectors(clusterId))
-                .list();
+                .list(listOptions);
     }
 
     protected void submitClusterInternal(Configuration conf) throws Exception {
@@ -337,7 +341,7 @@ public class NativeFlinkService extends AbstractFlinkService {
                             return kubernetesClient
                                     .pods()
                                     .inNamespace(namespace)
-                                    .withLabels(KubernetesUtils.getJobManagerSelectors(clusterId));
+                                    .withName(JobManagerInfoCache.getPodName(clusterId));
                         },
                         jmShutdownTimeout);
         return remainingTimeout.minus(jmShutdownTimeout).plus(remaining);

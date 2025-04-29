@@ -54,7 +54,7 @@ import org.apache.flink.kubernetes.operator.utils.EnvUtils;
 import org.apache.flink.kubernetes.operator.utils.EventRecorder;
 import org.apache.flink.kubernetes.operator.utils.ExceptionUtils;
 import org.apache.flink.kubernetes.operator.utils.FlinkUtils;
-import org.apache.flink.kubernetes.operator.utils.JobManagerIpCache;
+import org.apache.flink.kubernetes.operator.utils.JobManagerInfoCache;
 import org.apache.flink.runtime.client.JobStatusMessage;
 import org.apache.flink.runtime.highavailability.nonha.standalone.StandaloneClientHAServices;
 import org.apache.flink.runtime.jobmaster.JobResult;
@@ -864,9 +864,7 @@ public abstract class AbstractFlinkService implements FlinkService {
     }
 
     private String getJobManagerPodIp(Configuration conf) {
-        final String clusterId = conf.get(KubernetesConfigOptions.CLUSTER_ID);
-        final String namespace = conf.get(KubernetesConfigOptions.NAMESPACE);
-        return JobManagerIpCache.get(clusterId, namespace);
+        return JobManagerInfoCache.getPodIp(conf.get(KubernetesConfigOptions.CLUSTER_ID));
     }
 
     @VisibleForTesting
