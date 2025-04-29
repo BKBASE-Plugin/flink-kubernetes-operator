@@ -40,6 +40,7 @@ import org.apache.flink.kubernetes.operator.utils.StandaloneKubernetesUtils;
 import org.apache.flink.util.concurrent.ExecutorThreadFactory;
 
 import io.fabric8.kubernetes.api.model.DeletionPropagation;
+import io.fabric8.kubernetes.api.model.ListOptions;
 import io.fabric8.kubernetes.api.model.PodList;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import org.slf4j.Logger;
@@ -87,11 +88,13 @@ public class StandaloneFlinkService extends AbstractFlinkService {
 
     @Override
     protected PodList getJmPodList(String namespace, String clusterId) {
+        ListOptions listOptions = new ListOptions();
+        listOptions.setResourceVersion("0");
         return kubernetesClient
                 .pods()
                 .inNamespace(namespace)
                 .withLabels(StandaloneKubernetesUtils.getJobManagerSelectors(clusterId))
-                .list();
+                .list(listOptions);
     }
 
     @VisibleForTesting

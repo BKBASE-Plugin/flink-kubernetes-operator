@@ -30,33 +30,47 @@ import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /** Util to cache flink jobmanager info. */
-public final class JobManagerIpCache {
+public final class JobManagerInfoCache {
 
-    private static final Logger LOG = LoggerFactory.getLogger(JobManagerIpCache.class);
-    private static final Cache<String, String> cache =
+    private static final Logger LOG = LoggerFactory.getLogger(JobManagerInfoCache.class);
+    private static final Cache<String, JobManagerInfo> cache =
             CacheBuilder.newBuilder()
                     .recordStats()
                     .expireAfterAccess(1, TimeUnit.DAYS)
                     .maximumSize(50000)
                     .build();
 
-    public static String get(String clusterId, String namespace) {
-        String jmIp = cache.getIfPresent(clusterId);
-        if (jmIp == null) {
-            LOG.warn(
-                    "Could not get jobmanager ip from cache for cluster {} in namespace {}",
-                    clusterId,
-                    namespace);
-        }
-        return jmIp;
+    public static String getPodIp(String clusterId) {
+        return Optional.ofNullable(get(clusterId)).map(JobManagerInfo::getIp).orElse(null);
     }
 
-    public static void set(String clusterId, String jmIp) {
-        cache.put(clusterId, jmIp);
+    public static String getPodIpIfPresent(String clusterId) {
+        return Optional.ofNullable(cache.getIfPresent(clusterId))
+                .map(JobManagerInfo::getIp)
+                .orElse(null);
+    }
+
+    public static String getPodName(String clusterId) {
+        return Optional.ofNullable(get(clusterId)).map(JobManagerInfo::getName).orElse(null);
+    }
+
+    public static void set(String clusterId, JobManagerInfo jm) {
+        if (jm != null) {
+            cache.put(clusterId, jm);
+        }
+    }
+
+    public static JobManagerInfo get(String clusterId) {
+        JobManagerInfo jm = cache.getIfPresent(clusterId);
+        if (jm == null) {
+            LOG.warn("Could not get jobmanager info from cache for cluster {}", clusterId);
+        }
+        return jm;
     }
 
     public static void watchFlinkJobManagerPod(
@@ -65,42 +79,41 @@ public final class JobManagerIpCache {
         labels.put("type", "flink-native-kubernetes");
         labels.put("component", "jobmanager");
         labels.put("deployMode", "flink-k8s-operator");
+        ListOptions listOptions = new ListOptions();
+        listOptions.setResourceVersion("0");
+
         for (String namespace : namespaces) {
             LOG.info("List and watch jobmanager pod of namespace '{}'", namespace);
-            ListOptions listOptions = new ListOptions();
-            listOptions.setResourceVersion("0");
 
             kubernetesClient
                     .pods()
                     .inNamespace(namespace)
-                    .withNewFilter()
                     .withLabels(labels)
-                    .endFilter()
-                    .withResourceVersion("0")
                     .watch(
                             listOptions,
-                            new Watcher<Pod>() {
+                            new Watcher<>() {
                                 @Override
                                 public void eventReceived(Action action, Pod pod) {
                                     String clusterId = pod.getMetadata().getLabels().get("app");
                                     switch (action) {
                                         case ADDED:
                                         case MODIFIED:
-                                            String jmIp = pod.getStatus().getPodIP();
-                                            if (jmIp != null) {
+                                            String podIp = pod.getStatus().getPodIP();
+                                            String podName = pod.getMetadata().getName();
+                                            if (podIp != null
+                                                    && !podIp.equals(
+                                                            getPodIpIfPresent(clusterId))) {
+                                                JobManagerInfo jm =
+                                                        new JobManagerInfo(podName, podIp);
                                                 LOG.info(
-                                                        "Update jobmanager ip cache: action: {}, pod: {}, ip: {}",
-                                                        action,
+                                                        "UPDATE jobmanager info cache: {}: {}",
                                                         clusterId,
-                                                        jmIp);
-                                                set(clusterId, jmIp);
+                                                        jm);
+                                                set(clusterId, jm);
                                             }
                                             break;
                                         case DELETED:
-                                            LOG.info(
-                                                    "Remove jobmanager ip cache: action: {}, pod: {}",
-                                                    action,
-                                                    clusterId);
+                                            LOG.info("DELETE jobmanager info cache: {}", clusterId);
                                             cache.invalidate(clusterId);
                                         default:
                                             break;
